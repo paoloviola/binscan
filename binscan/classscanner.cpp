@@ -23,6 +23,7 @@ const uint8_t CONSTANT_Module = 19;
 const uint8_t CONSTANT_Package = 20;
 // cp tags
 
+// Map of all constant pool types with size
 const std::unordered_map<uint8_t, uint16_t> constantSize({
 	{ CONSTANT_Class, 2 },
 	{ CONSTANT_Fieldref, 4 },
@@ -34,7 +35,7 @@ const std::unordered_map<uint8_t, uint16_t> constantSize({
 	{ CONSTANT_Long, 8 },
 	{ CONSTANT_Double, 8 },
 	{ CONSTANT_NameAndType, 4 },
-	//{ CONSTANT_Utf8, var },
+	//{ CONSTANT_Utf8, var }, // Size varies
 	{ CONSTANT_MethodHandle, 3 },
 	{ CONSTANT_MethodType, 2 },
 	{ CONSTANT_Dynamic, 4 },
@@ -44,6 +45,7 @@ const std::unordered_map<uint8_t, uint16_t> constantSize({
 });
 
 // Class structure
+// https://docs.oracle.com/javase/specs/jvms/se16/html/jvms-4.html
 struct cp_info
 {
 	uint8_t tag;
@@ -98,6 +100,7 @@ struct ClassFile
 
 bool CheckMagicHeader(uint8_t* data, uint64_t offset, uint64_t datac)
 {
+	// Length of MAGIC_HEADER
 	const uint8_t len = sizeof(MAGIC_HEADER) / sizeof(*MAGIC_HEADER);
 	for (uint8_t i = 0; i < len; i++)
 	{
@@ -175,9 +178,16 @@ bool BinScanner::FindClassEntry(BinEntry* entry, uint8_t* data, uint64_t offset,
 	uint64_t end = offset;
 	{ // Load class file
 		ClassFile file;
+		if (end >= datac) return false;
 		file.magic = Read32(data + end);
+		
+		if (end + 6 >= datac) return false;
 		file.minor_version = Read16(data + end + 4);
+		
+		if (end + 8 >= datac) return false;
 		file.major_version = Read16(data + end + 6);
+
+		if (end + 10 >= datac) return false;
 		file.constant_pool_count = Read16(data + end + 8);
 		end += 10;
 
@@ -186,6 +196,7 @@ bool BinScanner::FindClassEntry(BinEntry* entry, uint8_t* data, uint64_t offset,
 		{
 			cp_info cp;
 			end += GetCPInfo(cp, data, end, datac);
+			if (end >= datac) return false;
 			file.constant_pool[i] = cp;
 			
 			// The constant_pool index n+1 must be valid but is considered unusable.
@@ -193,15 +204,26 @@ bool BinScanner::FindClassEntry(BinEntry* entry, uint8_t* data, uint64_t offset,
 				|| cp.tag == CONSTANT_Double) i++;
 		}
 
+		if (end + 2 >= datac) return false;
 		file.access_flags = Read16(data + end);
+		
+		if (end + 4 >= datac) return false;
 		file.this_class = Read16(data + end + 2);
+
+		if (end + 6 >= datac) return false;
 		file.super_class = Read16(data + end + 4);
+
+		if (end + 8 >= datac) return false;
 		file.interfaces_count = Read16(data + end + 6);
 		end += 8;
 
 		file.interfaces = new uint16_t[file.interfaces_count];
 		for (uint16_t i = 0; i < file.interfaces_count; i++)
-			file.interfaces[i] = Read16(data + end + 2 * (uint64_t)i);
+		{
+			uint64_t off = end + 2 * (uint64_t)i;
+			if (off + 2 >= datac) return false;
+			file.interfaces[i] = Read16(data + off);
+		}
 		end += (uint64_t)file.interfaces_count * 2;
 
 		file.fields_count = Read16(data + end);
@@ -212,6 +234,7 @@ bool BinScanner::FindClassEntry(BinEntry* entry, uint8_t* data, uint64_t offset,
 		{
 			field_info fi;
 			end += GetFieldInfo(fi, data, end, datac);
+			if (end >= datac) return false;
 			file.fields[i] = fi;
 		}
 
@@ -223,6 +246,7 @@ bool BinScanner::FindClassEntry(BinEntry* entry, uint8_t* data, uint64_t offset,
 		{
 			method_info mi;
 			end += GetMethodInfo(mi, data, end, datac);
+			if (end >= datac) return false;
 			file.methods[i] = mi;
 		}
 		
@@ -234,6 +258,7 @@ bool BinScanner::FindClassEntry(BinEntry* entry, uint8_t* data, uint64_t offset,
 		{
 			attribute_info ai;
 			end += GetAttributeInfo(ai, data, end, datac);
+			if (end >= datac) return false;
 			file.attributes[i] = ai;
 		}
 	}

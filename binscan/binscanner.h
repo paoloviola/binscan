@@ -19,14 +19,31 @@ class BinScanner
 public:
 	BinScanner(uint64_t datac, uint8_t* data);
 
+	/// <summary>
+	/// Checks if there is any space in memory for a possible new entry.
+	/// </summary>
 	bool HasNextEntry();
-	bool NextEntry(BinEntry* entry);
 
-	static bool FindZipEntry(BinEntry* entry, uint8_t* data, uint64_t offset, uint64_t datac);
-	static bool FindClassEntry(BinEntry* entry, uint8_t* data, uint64_t offset, uint64_t datac);
+	/// <summary>
+	/// Scans for the next entry.
+	/// </summary>
+	/// <returns>true if an entry was found, otherwise false</returns>
+	bool NextEntry(BinEntry* entry);
 private:
 	uint64_t datac;
 	uint8_t* data;
 	uint64_t offset;
+
+	/// <summary>
+	/// Checks if data at an specific offset is a ZipEntry
+	/// </summary>
+	/// <returns>true if an entry was successfully parsed, otherwise false</returns>
+	static bool FindZipEntry(BinEntry* entry, uint8_t* data, uint64_t offset, uint64_t datac);
+
+	/// <summary>
+	/// Checks if data at an specific offset is a ClassEntry
+	/// </summary>
+	/// <returns>true if an entry was successfully parsed, otherwise false</returns>
+	static bool FindClassEntry(BinEntry* entry, uint8_t* data, uint64_t offset, uint64_t datac);
 };
 

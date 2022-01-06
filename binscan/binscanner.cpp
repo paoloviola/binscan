@@ -1,18 +1,18 @@
 #include "binscanner.h"
 
 uint8_t Read8(uint8_t* addr)
-{
+{ // convert 1-byte value
 	return addr[0];
 }
 
 uint16_t Read16(uint8_t* addr)
-{
+{ // convert 2-byte value
 	return ((uint16_t)addr[0] << 8) 
 		| ((uint16_t)addr[1] << 0);
 }
 
 uint32_t Read32(uint8_t* addr)
-{
+{ // convert 4-byte value
 	return ((uint32_t)addr[0] << 24)
 		| ((uint32_t)addr[1] << 16)
 		| ((uint32_t)addr[2] << 8)
@@ -20,7 +20,7 @@ uint32_t Read32(uint8_t* addr)
 }
 
 uint64_t Read64(uint8_t* addr)
-{
+{ // convert 8-byte value
 	return ((uint64_t)addr[0] << 56)
 		| ((uint64_t)addr[1] << 48)
 		| ((uint64_t)addr[2] << 40)
