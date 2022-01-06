@@ -9,7 +9,7 @@ bool CheckLFHeader(uint8_t* data, uint64_t offset, uint64_t datac)
 	for (uint8_t i = 0; i < len; i++)
 	{
 		if (offset + i >= datac) return false;
-		if (LOCAL_FILE_HEADER[i] != data[offset + i])
+		if (LOCAL_FILE_HEADER[i] != Read8(data + offset + i))
 			return false;
 	}
 	return true;
@@ -21,13 +21,13 @@ bool CheckEOCDHeader(uint8_t* data, uint64_t offset, uint64_t datac)
 	for (uint8_t i = 0; i < len; i++)
 	{
 		if (offset + i >= datac) return false;
-		if (END_OF_CENTRAL_DIR_HEADER[i] != data[offset + i])
+		if (END_OF_CENTRAL_DIR_HEADER[i] != Read8(data + offset + i))
 			return false;
 	}
 	return true;
 }
 
-bool FindZipEntry(BinEntry* entry, uint8_t* data, uint64_t offset, uint64_t datac)
+bool BinScanner::FindZipEntry(BinEntry* entry, uint8_t* data, uint64_t offset, uint64_t datac)
 {
 	if (!CheckLFHeader(data, offset, datac))
 		return false;
@@ -48,7 +48,7 @@ bool FindZipEntry(BinEntry* entry, uint8_t* data, uint64_t offset, uint64_t data
 	if ((end += 20) + 2 >= datac)
 		return false;
 
-	end = end + 2 + (uint16_t)data[end];
+	end += 2 + (uint64_t)Read16(data + end);
 	if (end >= datac) return false;
 
 	entry->ext = ".zip";

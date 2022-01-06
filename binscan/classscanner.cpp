@@ -1,0 +1,246 @@
+#include "binscanner.h"
+#include <unordered_map>
+
+const uint8_t MAGIC_HEADER[] = { 0xCA, 0xFE, 0xBA, 0xBE };
+
+// cp tags
+const uint8_t CONSTANT_Class = 7;
+const uint8_t CONSTANT_Fieldref = 9;
+const uint8_t CONSTANT_Methodref = 10;
+const uint8_t CONSTANT_InterfaceMethodref = 11;
+const uint8_t CONSTANT_String = 8;
+const uint8_t CONSTANT_Integer = 3;
+const uint8_t CONSTANT_Float = 4;
+const uint8_t CONSTANT_Long = 5;
+const uint8_t CONSTANT_Double = 6;
+const uint8_t CONSTANT_NameAndType = 12;
+const uint8_t CONSTANT_Utf8 = 1;
+const uint8_t CONSTANT_MethodHandle = 15;
+const uint8_t CONSTANT_MethodType = 16;
+const uint8_t CONSTANT_Dynamic = 17;
+const uint8_t CONSTANT_InvokeDynamic = 18;
+const uint8_t CONSTANT_Module = 19;
+const uint8_t CONSTANT_Package = 20;
+// cp tags
+
+const std::unordered_map<uint8_t, uint16_t> constantSize({
+	{ CONSTANT_Class, 2 },
+	{ CONSTANT_Fieldref, 4 },
+	{ CONSTANT_Methodref, 4 },
+	{ CONSTANT_InterfaceMethodref, 4 },
+	{ CONSTANT_String, 2 },
+	{ CONSTANT_Integer, 4 },
+	{ CONSTANT_Float, 4 },
+	{ CONSTANT_Long, 8 },
+	{ CONSTANT_Double, 8 },
+	{ CONSTANT_NameAndType, 4 },
+	//{ CONSTANT_Utf8, var },
+	{ CONSTANT_MethodHandle, 3 },
+	{ CONSTANT_MethodType, 2 },
+	{ CONSTANT_Dynamic, 4 },
+	{ CONSTANT_InvokeDynamic, 4 },
+	{ CONSTANT_Module, 2 },
+	{ CONSTANT_Package, 2 }
+});
+
+// Class structure
+struct cp_info
+{
+	uint8_t tag;
+	uint8_t* info;
+};
+
+struct attribute_info
+{
+	uint16_t attribute_name_index;
+	uint32_t attribute_length;
+	uint8_t* info;
+};
+
+struct field_info
+{
+	uint16_t access_flags;
+	uint16_t name_index;
+	uint16_t descriptor_index;
+	uint16_t attributes_count;
+	attribute_info* attributes;
+};
+
+struct method_info
+{
+	uint16_t access_flags;
+	uint16_t name_index;
+	uint16_t descriptor_index;
+	uint16_t attributes_count;
+	attribute_info* attributes;
+};
+
+struct ClassFile
+{
+	uint32_t magic;
+	uint16_t minor_version;
+	uint16_t major_version;
+	uint16_t constant_pool_count;
+	cp_info* constant_pool;
+	uint16_t access_flags;
+	uint16_t this_class;
+	uint16_t super_class;
+	uint16_t interfaces_count;
+	uint16_t* interfaces;
+	uint16_t fields_count;
+	field_info* fields;
+	uint16_t methods_count;
+	method_info* methods;
+	uint16_t attributes_count;
+	attribute_info* attributes;
+};
+// Class structure
+
+bool CheckMagicHeader(uint8_t* data, uint64_t offset, uint64_t datac)
+{
+	const uint8_t len = sizeof(MAGIC_HEADER) / sizeof(*MAGIC_HEADER);
+	for (uint8_t i = 0; i < len; i++)
+	{
+		if (offset + i >= datac) return false;
+		if (MAGIC_HEADER[i] != Read8(data + offset + i))
+			return false;
+	}
+	return true;
+}
+
+uint64_t GetCPInfo(cp_info& cp, uint8_t* data, uint64_t offset, uint64_t datac)
+{
+	cp.tag = Read8(data + offset);
+	uint16_t len = 1 + (cp.tag == CONSTANT_Utf8 ?
+		2 + Read16(data + offset + 1) : constantSize.at(cp.tag));
+	//cp.info = new uint8_t[len - 1];
+
+	cp.info = new uint8_t[0]; // don't allocate unnecessary memory
+	return len;
+}
+
+uint64_t GetAttributeInfo(attribute_info& ai, uint8_t* data, uint64_t offset, uint64_t datac)
+{
+	ai.attribute_name_index = Read16(data + offset);
+	ai.attribute_length = Read32(data + offset + 2);
+	//ai.info = new uint8_t[ai.attribute_length];
+
+	ai.info = new uint8_t[0]; // don't allocate unnecessary memory
+	return 6 + (uint64_t)ai.attribute_length;
+}
+
+uint64_t GetFieldInfo(field_info& fi, uint8_t* data, uint64_t offset, uint64_t datac)
+{
+	uint64_t end = offset;
+	fi.access_flags = Read16(data + end);
+	fi.name_index = Read16(data + end + 2);
+	fi.descriptor_index = Read16(data + end + 4);
+	fi.attributes_count = Read16(data + end + 6);
+	end += 8;
+
+	fi.attributes = new attribute_info[fi.attributes_count];
+	for (uint16_t j = 0; j < fi.attributes_count; j++)
+	{
+		attribute_info ai;
+		end += GetAttributeInfo(ai, data, end, datac);
+		fi.attributes[j] = ai;
+	}
+	return end - offset;
+}
+
+uint64_t GetMethodInfo(method_info& mi, uint8_t* data, uint64_t offset, uint64_t datac)
+{
+	uint64_t end = offset;
+	mi.access_flags = Read16(data + end);
+	mi.name_index = Read16(data + end + 2);
+	mi.descriptor_index = Read16(data + end + 4);
+	mi.attributes_count = Read16(data + end + 6);
+	end += 8;
+
+	mi.attributes = new attribute_info[mi.attributes_count];
+	for (uint16_t j = 0; j < mi.attributes_count; j++)
+	{
+		attribute_info ai;
+		end += GetAttributeInfo(ai, data, end, datac);
+		mi.attributes[j] = ai;
+	}
+	return end - offset;
+}
+
+bool BinScanner::FindClassEntry(BinEntry* entry, uint8_t* data, uint64_t offset, uint64_t datac)
+{
+	if (!CheckMagicHeader(data, offset, datac))
+		return false;
+
+	uint64_t end = offset;
+	{ // Load class file
+		ClassFile file;
+		file.magic = Read32(data + end);
+		file.minor_version = Read16(data + end + 4);
+		file.major_version = Read16(data + end + 6);
+		file.constant_pool_count = Read16(data + end + 8);
+		end += 10;
+
+		file.constant_pool = new cp_info[file.constant_pool_count];
+		for (uint16_t i = 0; i < file.constant_pool_count - 1; i++)
+		{
+			cp_info cp;
+			end += GetCPInfo(cp, data, end, datac);
+			file.constant_pool[i] = cp;
+			
+			// The constant_pool index n+1 must be valid but is considered unusable.
+			if (cp.tag == CONSTANT_Long
+				|| cp.tag == CONSTANT_Double) i++;
+		}
+
+		file.access_flags = Read16(data + end);
+		file.this_class = Read16(data + end + 2);
+		file.super_class = Read16(data + end + 4);
+		file.interfaces_count = Read16(data + end + 6);
+		end += 8;
+
+		file.interfaces = new uint16_t[file.interfaces_count];
+		for (uint16_t i = 0; i < file.interfaces_count; i++)
+			file.interfaces[i] = Read16(data + end + 2 * (uint64_t)i);
+		end += (uint64_t)file.interfaces_count * 2;
+
+		file.fields_count = Read16(data + end);
+		end += 2;
+
+		file.fields = new field_info[file.fields_count];
+		for (uint16_t i = 0; i < file.fields_count; i++)
+		{
+			field_info fi;
+			end += GetFieldInfo(fi, data, end, datac);
+			file.fields[i] = fi;
+		}
+
+		file.methods_count = Read16(data + end);
+		end += 2;
+
+		file.methods = new method_info[file.methods_count];
+		for (uint16_t i = 0; i < file.methods_count; i++)
+		{
+			method_info mi;
+			end += GetMethodInfo(mi, data, end, datac);
+			file.methods[i] = mi;
+		}
+		
+		file.attributes_count = Read16(data + end);
+		end += 2;
+
+		file.attributes = new attribute_info[file.attributes_count];
+		for (uint16_t i = 0; i < file.attributes_count; i++)
+		{
+			attribute_info ai;
+			end += GetAttributeInfo(ai, data, end, datac);
+			file.attributes[i] = ai;
+		}
+	}
+	entry->ext = ".class";
+	entry->offset = offset;
+	entry->length = end - offset;
+	entry->data = data;
+	return true;
+}
+

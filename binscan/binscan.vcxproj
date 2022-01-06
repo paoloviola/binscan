@@ -139,6 +139,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="classscanner.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="binscanner.cpp" />
     <ClCompile Include="zipscanner.cpp" />
