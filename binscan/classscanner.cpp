@@ -113,9 +113,20 @@ bool CheckMagicHeader(uint8_t* data, uint64_t offset, uint64_t datac)
 
 uint64_t GetCPInfo(cp_info& cp, uint8_t* data, uint64_t offset, uint64_t datac)
 {
+	if (offset + 1 >= datac) return 0;
 	cp.tag = Read8(data + offset);
-	uint16_t len = 1 + (cp.tag == CONSTANT_Utf8 ?
-		2 + Read16(data + offset + 1) : constantSize.at(cp.tag));
+
+	uint16_t len = 1;
+	if (cp.tag == CONSTANT_Utf8)
+	{
+		if (offset + 3 >= datac) return 0;
+		len += 2 + Read16(data + offset + 1);
+	}
+	else
+	{
+		if (constantSize.find(cp.tag) == constantSize.end()) return 0;
+		len += constantSize.at(cp.tag);
+	}
 	//cp.info = new uint8_t[len - 1];
 
 	cp.info = new uint8_t[0]; // don't allocate unnecessary memory
@@ -124,7 +135,9 @@ uint64_t GetCPInfo(cp_info& cp, uint8_t* data, uint64_t offset, uint64_t datac)
 
 uint64_t GetAttributeInfo(attribute_info& ai, uint8_t* data, uint64_t offset, uint64_t datac)
 {
+	if (offset + 2 >= datac) return 0;
 	ai.attribute_name_index = Read16(data + offset);
+	if (offset + 6 >= datac) return 0;
 	ai.attribute_length = Read32(data + offset + 2);
 	//ai.info = new uint8_t[ai.attribute_length];
 
@@ -135,9 +148,13 @@ uint64_t GetAttributeInfo(attribute_info& ai, uint8_t* data, uint64_t offset, ui
 uint64_t GetFieldInfo(field_info& fi, uint8_t* data, uint64_t offset, uint64_t datac)
 {
 	uint64_t end = offset;
+	if (end + 2 >= datac) return 0;
 	fi.access_flags = Read16(data + end);
+	if (end + 4 >= datac) return 0;
 	fi.name_index = Read16(data + end + 2);
+	if (end + 6 >= datac) return 0;
 	fi.descriptor_index = Read16(data + end + 4);
+	if (end + 8 >= datac) return 0;
 	fi.attributes_count = Read16(data + end + 6);
 	end += 8;
 
@@ -145,7 +162,8 @@ uint64_t GetFieldInfo(field_info& fi, uint8_t* data, uint64_t offset, uint64_t d
 	for (uint16_t j = 0; j < fi.attributes_count; j++)
 	{
 		attribute_info ai;
-		end += GetAttributeInfo(ai, data, end, datac);
+		uint64_t len = GetAttributeInfo(ai, data, end, datac);
+		if(len == 0 || (end += len) >= datac) return 0;
 		fi.attributes[j] = ai;
 	}
 	return end - offset;
@@ -154,9 +172,13 @@ uint64_t GetFieldInfo(field_info& fi, uint8_t* data, uint64_t offset, uint64_t d
 uint64_t GetMethodInfo(method_info& mi, uint8_t* data, uint64_t offset, uint64_t datac)
 {
 	uint64_t end = offset;
+	if (end + 2 >= datac) return 0;
 	mi.access_flags = Read16(data + end);
+	if (end + 4 >= datac) return 0;
 	mi.name_index = Read16(data + end + 2);
+	if (end + 6 >= datac) return 0;
 	mi.descriptor_index = Read16(data + end + 4);
+	if (end + 8 >= datac) return 0;
 	mi.attributes_count = Read16(data + end + 6);
 	end += 8;
 
@@ -164,7 +186,8 @@ uint64_t GetMethodInfo(method_info& mi, uint8_t* data, uint64_t offset, uint64_t
 	for (uint16_t j = 0; j < mi.attributes_count; j++)
 	{
 		attribute_info ai;
-		end += GetAttributeInfo(ai, data, end, datac);
+		uint64_t len = GetAttributeInfo(ai, data, end, datac);
+		if (len == 0 || (end += len) >= datac) return 0;
 		mi.attributes[j] = ai;
 	}
 	return end - offset;
@@ -180,7 +203,7 @@ bool BinScanner::FindClassEntry(BinEntry* entry, uint8_t* data, uint64_t offset,
 		ClassFile file;
 		if (end >= datac) return false;
 		file.magic = Read32(data + end);
-		
+
 		if (end + 6 >= datac) return false;
 		file.minor_version = Read16(data + end + 4);
 		
@@ -195,8 +218,8 @@ bool BinScanner::FindClassEntry(BinEntry* entry, uint8_t* data, uint64_t offset,
 		for (uint16_t i = 0; i < file.constant_pool_count - 1; i++)
 		{
 			cp_info cp;
-			end += GetCPInfo(cp, data, end, datac);
-			if (end >= datac) return false;
+			uint64_t len = GetCPInfo(cp, data, end, datac);
+			if (len == 0 || (end += len) >= datac) return false;
 			file.constant_pool[i] = cp;
 			
 			// The constant_pool index n+1 must be valid but is considered unusable.
@@ -226,6 +249,7 @@ bool BinScanner::FindClassEntry(BinEntry* entry, uint8_t* data, uint64_t offset,
 		}
 		end += (uint64_t)file.interfaces_count * 2;
 
+		if (end + 2 >= datac) return false;
 		file.fields_count = Read16(data + end);
 		end += 2;
 
@@ -233,11 +257,12 @@ bool BinScanner::FindClassEntry(BinEntry* entry, uint8_t* data, uint64_t offset,
 		for (uint16_t i = 0; i < file.fields_count; i++)
 		{
 			field_info fi;
-			end += GetFieldInfo(fi, data, end, datac);
-			if (end >= datac) return false;
+			uint64_t len = GetFieldInfo(fi, data, end, datac);
+			if (len == 0 || (end += len) >= datac) return false;
 			file.fields[i] = fi;
 		}
 
+		if (end + 2 >= datac) return false;
 		file.methods_count = Read16(data + end);
 		end += 2;
 
@@ -245,11 +270,12 @@ bool BinScanner::FindClassEntry(BinEntry* entry, uint8_t* data, uint64_t offset,
 		for (uint16_t i = 0; i < file.methods_count; i++)
 		{
 			method_info mi;
-			end += GetMethodInfo(mi, data, end, datac);
-			if (end >= datac) return false;
+			uint64_t len = GetMethodInfo(mi, data, end, datac);
+			if (len == 0 || (end += len) >= datac) return false;
 			file.methods[i] = mi;
 		}
 		
+		if (end + 2 >= datac) return false;
 		file.attributes_count = Read16(data + end);
 		end += 2;
 
@@ -257,8 +283,8 @@ bool BinScanner::FindClassEntry(BinEntry* entry, uint8_t* data, uint64_t offset,
 		for (uint16_t i = 0; i < file.attributes_count; i++)
 		{
 			attribute_info ai;
-			end += GetAttributeInfo(ai, data, end, datac);
-			if (end >= datac) return false;
+			uint64_t len = GetAttributeInfo(ai, data, end, datac);
+			if (len == 0 || (end += len) >= datac) return false;
 			file.attributes[i] = ai;
 		}
 	}
